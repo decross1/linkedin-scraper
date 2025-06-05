@@ -6,10 +6,208 @@ import { LINKEDIN_URLS } from '../config/config';
 import { randomDelay, getRandomUserAgent, cleanText, formatDate } from '../utils/helpers';
 import { readFile, writeFile } from 'fs/promises';
 
+// Selector constants
+const SELECTORS = {
+    JOB_CONTAINERS: [
+        '.jobs-search__results-list',
+        '.scaffold-layout__list-container',
+        '.jobs-search-results-list',
+        '.jobs-search-results',
+        '.jobs-search-results__list',
+        'div[data-view-name="job-search-results"]',
+        '.jobs-search-results-grid',
+        '.jobs-search__results-grid',
+        '.jobs-search-results__list-item',
+        '.job-card-container',
+        '.jobs-search-two-pane__wrapper',
+        '.jobs-search-results-list__wrapper',
+        '.jobs-search-results__container',
+        '.jobs-search-results__list-item--active',
+        '.jobs-search-results__list-item--visited',
+        '.jobs-search-results__list-item--applied'
+    ],
+    JOB_CARDS: [
+        '.job-card-container',
+        '.jobs-search-results__list-item',
+        '.jobs-search-two-pane__job-card-container',
+        '[data-job-id]',
+        '.job-card-list',
+        '.jobs-search-results__list-item--active'
+    ],
+    JOB_TITLE: [
+        'h3.base-search-card__title',
+        '.job-card-list__title',
+        '.job-card-container__link',
+        '.jobs-search-results__list-item-title',
+        'a[data-control-name="job_card_title"]',
+        '.job-card-container__link span',
+        '.jobs-unified-top-card__job-title',
+        '.job-details-jobs-unified-top-card__job-title'
+    ],
+    COMPANY_NAME: [
+        'h4.base-search-card__subtitle',
+        'h4.job-card-container__company-name',
+        '.job-card-container__company-name',
+        '.job-card-container__primary-description',
+        '.base-search-card__subtitle',
+        '.job-card-container__company-link',
+        '.artdeco-entity-lockup__subtitle',
+        '.jobs-unified-top-card__company-name',
+        '.job-details-jobs-unified-top-card__company-name',
+        'a[data-control-name="company_link"]'
+    ],
+    JOB_LINK: [
+        'a.job-card-container__link',
+        'a.base-card__full-link',
+        'a.job-card-list__title',
+        'a[data-control-name="job_card_title"]',
+        '.job-card-list__title',
+        'a.job-card-container__company-name'
+    ],
+    DESCRIPTION: [
+        '.jobs-description__content',
+        '.jobs-box__html-content',
+        '.jobs-description',
+        '.jobs-unified-description__content',
+        '.jobs-search__job-details--container',
+        '.job-card-container__description',
+        '.base-search-card__metadata',
+        '.job-card-list__description',
+        '.job-card-container__metadata',
+        '.jobs-description-content__text',
+        'article.jobs-description__container'
+    ],
+    POSTED_DATE: [
+        'time.job-search-card__listdate',
+        '.job-card-container__listed-time',
+        '.posted-time-ago__text',
+        '.job-search-card__listdate--new',
+        '.jobs-unified-top-card__posted-date',
+        '.jobs-details-job-card__time-badge',
+        'time.artdeco-entity-lockup__caption',
+        '.job-card-container__metadata-wrapper time',
+        '[data-test-job-card-posted-date]'
+    ],
+    LOCATION: [
+        '.job-card-container__metadata-item',
+        '.job-search-card__location',
+        '.artdeco-entity-lockup__caption',
+        '.job-card-container__metadata-wrapper',
+        '.jobs-unified-top-card__bullet',
+        '.jobs-unified-top-card__workplace-type',
+        '.jobs-unified-top-card__subtitle-primary-grouping',
+        '.job-card-container__metadata-wrapper span:not([class])',
+        '.job-details-jobs-unified-top-card__bullet',
+        '.job-card-container__metadata-wrapper div:not([class])'
+    ],
+    SALARY: [
+        '.job-search-card__salary-info',
+        '.job-card-container__salary-info',
+        '.salary-information',
+        '.jobs-unified-top-card__salary',
+        '.jobs-unified-top-card__metadata-salary',
+        '.compensation-information',
+        '.jobs-unified-top-card__metadata-compensation',
+        '[data-test-job-card-salary]',
+        '.job-details-jobs-unified-top-card__salary-info',
+        '.job-card-list__salary',
+        '.jobs-unified-top-card__primary-description span[class*="salary"]',
+        '.job-details-jobs-unified-top-card__primary-description span[class*="salary"]',
+        'span[class*="salary"]',
+        'div[class*="salary"]'
+    ],
+    LOGIN_CHECK: {
+        NAV_BAR: '.global-nav',
+        PROFILE_ICON: '.global-nav__me-menu',
+        LOGIN_FORM: '.login__form',
+        JOIN_NOW: '.join-now'
+    },
+    DESCRIPTION_SECTIONS: {
+        START_HEADERS: [
+            'About the job',
+            'Role and Responsibilities',
+            'What You\'ll Do',
+            'The Role',
+            'Position Summary',
+            'Job Description',
+            'Overview',
+            'About This Role',
+            'About this role',
+            'The Opportunity',
+            'Description'
+        ],
+        END_HEADERS: [
+            'Qualifications',
+            'Requirements',
+            'Required Skills',
+            'Required Experience',
+            'What You\'ll Need',
+            'What You Need',
+            'Basic Qualifications',
+            'Minimum Qualifications',
+            'Skills and Experience',
+            'About Us',
+            'About the Company',
+            'Benefits',
+            'What We Offer',
+            'Perks',
+            'Why Join Us',
+            'Equal Opportunity'
+        ]
+    }
+};
+
+// Utility functions
+const cleanJobTitle = (title: string): string => {
+    return title
+        .replace(/\s*with verification$/, '')  // Remove "with verification"
+        .replace(/(.+?)\s+\1/, '$1')  // Remove duplicated title
+        .replace(/\s+/g, ' ')  // Replace multiple spaces
+        .trim();
+};
+
+const parsePostedDate = (date: string): string => {
+    if (!date) return 'Not specified';
+    
+    // Convert relative dates to absolute dates
+    const now = new Date();
+    const lowerDate = date.toLowerCase();
+    
+    if (lowerDate.includes('just now') || lowerDate.includes('now')) {
+        return now.toISOString().split('T')[0];
+    }
+    
+    const matches = lowerDate.match(/(\d+)\s*(hour|day|week|month)s?\s*ago/);
+    if (matches) {
+        const [_, amount, unit] = matches;
+        const date = new Date(now);
+        
+        switch(unit) {
+            case 'hour':
+                date.setHours(date.getHours() - parseInt(amount));
+                break;
+            case 'day':
+                date.setDate(date.getDate() - parseInt(amount));
+                break;
+            case 'week':
+                date.setDate(date.getDate() - (parseInt(amount) * 7));
+                break;
+            case 'month':
+                date.setMonth(date.getMonth() - parseInt(amount));
+                break;
+        }
+        
+        return date.toISOString().split('T')[0];
+    }
+    
+    return date;
+};
+
 export class LinkedInScraper {
     private browser: Browser | null = null;
     private page: Page | null = null;
     private config: ScraperConfig;
+    private readonly maxRetries = 3;
 
     constructor(config: ScraperConfig) {
         this.config = config;
@@ -20,17 +218,44 @@ export class LinkedInScraper {
         // Launch browser with anti-detection measures
         this.browser = await puppeteer.launch({
             headless: this.config.headless,
+            devtools: !this.config.headless, // Open DevTools by default in non-headless mode
             args: [
                 '--disable-blink-features=AutomationControlled',
                 '--no-sandbox',
-                '--disable-setuid-sandbox'
-            ]
+                '--disable-setuid-sandbox',
+                '--start-maximized',  // Start with maximized window
+                '--window-size=1920,1080'  // Set a specific window size
+            ],
+            defaultViewport: null  // This allows the content to fill the window
         });
+
+        // Add browser close handler
+        this.browser.on('disconnected', () => {
+            console.log('\nBrowser was closed. Exiting...');
+            process.exit(1);
+        });
+
         console.log(`Browser launched in ${this.config.headless ? 'headless' : 'visible'} mode`);
 
         this.page = await this.browser.newPage();
         console.log('New page created');
-        
+
+        // Set the window to maximize
+        if (!this.config.headless) {
+            const context = this.browser.defaultBrowserContext();
+            const pages = await this.browser.pages();
+            const page = pages[0];
+            
+            // Set window bounds to maximize
+            await page.evaluate(() => {
+                window.moveTo(0, 0);
+                window.resizeTo(
+                    window.screen.availWidth,
+                    window.screen.availHeight
+                );
+            });
+        }
+
         // Set up anti-detection measures
         await this.page.setUserAgent(getRandomUserAgent());
         await this.page.setDefaultNavigationTimeout(this.config.navigationTimeout);
@@ -52,6 +277,16 @@ export class LinkedInScraper {
         } catch (error) {
             console.log('No saved cookies found. Will need to perform fresh login.');
         }
+
+        // Add page error handlers
+        this.page.on('error', err => {
+            console.log('\nPage crashed. Error:', err);
+            this.close().then(() => process.exit(1));
+        });
+
+        this.page.on('pageerror', err => {
+            console.log('\nPage error occurred:', err);
+        });
     }
 
     private async waitForSuccessfulLogin(): Promise<void> {
@@ -63,29 +298,30 @@ export class LinkedInScraper {
         try {
             // Wait for login modal or page to disappear
             await this.page?.waitForFunction(
-                () => {
+                (selectors) => {
                     // Check if login modal is present
-                    const loginModal = document.querySelector('.authentication-modal');
-                    const loginForm = document.querySelector('.login__form');
-                    const joinNow = document.querySelector('.join-now');
+                    const loginForm = document.querySelector(selectors.LOGIN_FORM);
+                    const joinNow = document.querySelector(selectors.JOIN_NOW);
                     
                     // If any of these elements exist, we're still on the login page
-                    return !loginModal && !loginForm && !joinNow;
+                    return !loginForm && !joinNow;
                 },
-                { timeout: 120000, polling: 1000 } // 2 minutes timeout, check every second
+                { timeout: 120000, polling: 1000 }, // 2 minutes timeout, check every second
+                SELECTORS.LOGIN_CHECK
             );
 
             // Additional verification - wait for some elements that indicate we're logged in
             await this.page?.waitForFunction(
-                () => {
+                (selectors) => {
                     // Check for elements that are typically present when logged in
-                    const navBar = document.querySelector('.global-nav');
-                    const profileIcon = document.querySelector('.global-nav__me-menu');
+                    const navBar = document.querySelector(selectors.NAV_BAR);
+                    const profileIcon = document.querySelector(selectors.PROFILE_ICON);
                     
                     // Consider logged in if we find these elements
                     return navBar !== null || profileIcon !== null;
                 },
-                { timeout: 30000, polling: 1000 } // 30 seconds additional timeout
+                { timeout: 30000, polling: 1000 }, // 30 seconds additional timeout
+                SELECTORS.LOGIN_CHECK
             );
 
             console.log('Manual login successful');
@@ -98,6 +334,42 @@ export class LinkedInScraper {
             }
         } catch (error) {
             throw new Error('Login timeout or verification failed. Please try again and ensure you complete the login process.');
+        }
+    }
+
+    private async verifyLoginStatus(retryCount = 0): Promise<boolean> {
+        if (!this.page) throw new Error('Browser not initialized');
+        
+        console.log('Verifying login status...');
+        const maxRetries = 2;
+
+        try {
+            // Check for elements that indicate we're logged in
+            const isLoggedIn = await this.page.evaluate((selectors) => {
+                const navBar = document.querySelector(selectors.NAV_BAR);
+                const profileIcon = document.querySelector(selectors.PROFILE_ICON);
+                const loginForm = document.querySelector(selectors.LOGIN_FORM);
+                const joinNow = document.querySelector(selectors.JOIN_NOW);
+                
+                return (navBar !== null || profileIcon !== null) && !loginForm && !joinNow;
+            }, SELECTORS.LOGIN_CHECK);
+
+            if (!isLoggedIn) {
+                console.log('Not logged in, attempting to restore session...');
+                if (retryCount < maxRetries) {
+                    await this.waitForSuccessfulLogin();
+                    // Verify again after login
+                    return this.verifyLoginStatus(retryCount + 1);
+                } else {
+                    console.log('Max retry attempts reached for login verification');
+                    return false;
+                }
+            }
+
+            return true;
+        } catch (error) {
+            console.error('Error verifying login status:', error);
+            return false;
         }
     }
 
@@ -127,179 +399,610 @@ export class LinkedInScraper {
     }
 
     async searchJobs(keywords: string, location: string): Promise<JobListing[]> {
-        if (!this.page) throw new Error('Browser not initialized');
+        if (!this.page || !this.browser) throw new Error('Browser not initialized');
 
-        const jobs: JobListing[] = [];
+        // Check if browser is still connected
+        if (!this.browser.isConnected()) {
+            console.log('\nBrowser is no longer connected. Exiting...');
+            process.exit(1);
+        }
+
+        const allJobs: JobListing[] = [];
         console.log(`\nStarting job search for "${keywords}" in "${location}"...`);
         
-        // First verify we're still logged in by visiting the jobs page
-        console.log('Verifying login status...');
-        await this.page.goto(LINKEDIN_URLS.jobs);
-        await randomDelay(2000, 3000);
-
-        // Check if we got redirected to login
-        const currentUrl = await this.page.url();
-        if (currentUrl.includes('/login')) {
-            await this.waitForSuccessfulLogin();
-        }
-
-        // Now proceed with the search
-        const searchUrl = `${LINKEDIN_URLS.jobs}/search/?keywords=${encodeURIComponent(keywords)}&location=${encodeURIComponent(location)}`;
-        console.log(`\nNavigating to search URL: ${searchUrl}`);
-        
-        await this.page.goto(searchUrl);
-        console.log('Waiting for job listings to load...');
-        
-        // Wait longer for the page to load completely
-        await randomDelay(5000, 8000);
-        
-        // Verify we're on the correct page and still logged in
-        const searchPageUrl = await this.page.url();
-        console.log('Current URL:', searchPageUrl);
-        
-        if (searchPageUrl.includes('/login')) {
-            await this.waitForSuccessfulLogin();
-            // Try the search again
-            await this.page.goto(searchUrl);
-            await randomDelay(5000, 8000);
-        }
-
-        // Try to find any job-related elements on the page
-        const selectors = [
-            '.jobs-search__results-list',
-            '.job-card-container',
-            '.jobs-search-results__list-item',
-            '[data-job-id]',
-            '.jobs-search-results-list',
-            '.jobs-search-results__list'
-        ];
-
-        let foundSelector = null;
-        for (const selector of selectors) {
-            console.log(`Checking for selector: ${selector}`);
-            const elements = await this.page.$$(selector);
-            if (elements.length > 0) {
-                console.log(`Found ${elements.length} elements with selector: ${selector}`);
-                foundSelector = selector;
-                break;
-            }
-        }
-
-        if (!foundSelector) {
-            console.log('Could not find any job listing elements. Checking page content...');
+        try {
+            // Navigate to search URL
+            const searchUrl = `${LINKEDIN_URLS.jobs}/search/?keywords=${encodeURIComponent(keywords)}&location=${encodeURIComponent(location)}`;
+            console.log(`\nNavigating to search URL: ${searchUrl}`);
             
-            // Log the page title
-            const title = await this.page.title();
-            console.log('Page title:', title);
-
-            // Check if we're being blocked or redirected
-            const content = await this.page.content();
-            if (content.includes('captcha') || content.includes('verify')) {
-                console.log('Detected potential security check or captcha');
-                return jobs;
-            }
-
-            // Try to get any text content to see what's on the page
-            const bodyText = await this.page.evaluate(() => document.body.innerText);
-            console.log('Page text preview:', bodyText.substring(0, 200) + '...');
-            
-            // Save a screenshot for debugging
-            await this.page.screenshot({ path: 'debug-screenshot.png' });
-            console.log('Saved debug screenshot to debug-screenshot.png');
-            
-            return jobs;
-        }
-
-        console.log('Starting infinite scroll to load all job listings...');
-        await this.autoScroll();
-        console.log('Finished loading job listings');
-
-        // Get all job cards with the found selector
-        const jobCards = await this.page.$$(foundSelector);
-        console.log(`Found ${jobCards.length} job listings`);
-
-        for (let i = 0; i < jobCards.length; i++) {
             try {
-                console.log(`\nProcessing job ${i + 1} of ${jobCards.length}`);
-                
-                // Try to get some information before clicking
-                const cardText = await this.page.evaluate(el => {
-                    return {
-                        text: el.textContent,
-                        html: el.innerHTML,
-                        classes: el.className,
-                        id: el.id
-                    };
-                }, jobCards[i]);
-                
-                console.log('Job card details:');
-                console.log('- Classes:', cardText.classes);
-                console.log('- ID:', cardText.id);
-                console.log('- Text preview:', (cardText.text || '').substring(0, 100) + '...');
-                console.log('- HTML preview:', (cardText.html || '').substring(0, 100) + '...');
+                await this.page.goto(searchUrl, {
+                    waitUntil: 'networkidle0',
+                    timeout: 60000
+                });
+            } catch (error) {
+                console.log('Initial navigation timeout, retrying with less strict conditions...');
+                await this.page.goto(searchUrl, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 30000
+                });
+            }
 
-                // Try to find clickable elements within the card
-                const clickableElements = await jobCards[i].$$('a, button');
-                console.log(`Found ${clickableElements.length} clickable elements in the card`);
+            // Wait for any of these selectors to appear with increased timeout
+            const jobSelectors = [
+                '.job-card-container',
+                '.jobs-search-results-list',
+                '.jobs-search__results-list',
+                '.jobs-search-results__list-item',
+                '.scaffold-layout__list-container',
+                '.jobs-search-results-list__wrapper',
+                '.jobs-search-results__container'
+            ];
 
-                if (clickableElements.length > 0) {
-                    // Try to click the first clickable element
-                    console.log('Attempting to click first clickable element...');
-                    await clickableElements[0].click();
-                } else {
-                    // Fallback to clicking the card itself
-                    console.log('No clickable elements found, attempting to click the card...');
-                    await jobCards[i].click();
+            console.log('Waiting for job listings to load...');
+            let foundSelector = null;
+            
+            // Add a longer initial wait
+            console.log('Waiting for page to fully load...');
+            await randomDelay(5000, 7000);
+            
+            // Try each selector with a longer timeout
+            for (const selector of jobSelectors) {
+                try {
+                    console.log(`Trying selector: ${selector}`);
+                    // Increase timeout to 20 seconds per selector
+                    await this.page.waitForSelector(selector, { 
+                        timeout: 20000,
+                        visible: true 
+                    });
+                    foundSelector = selector;
+                    console.log(`Found jobs with selector: ${selector}`);
+                    break;
+                } catch (error) {
+                    console.log(`Selector ${selector} not found, trying next...`);
+                }
+            }
+
+            if (!foundSelector) {
+                // Try one last time with a scroll
+                console.log('No selectors found, trying with page scroll...');
+                await this.page.evaluate(() => {
+                    window.scrollTo(0, 500);
+                });
+                await randomDelay(3000, 5000);
+                
+                // Try selectors again after scroll
+                for (const selector of jobSelectors) {
+                    try {
+                        await this.page.waitForSelector(selector, { 
+                            timeout: 10000,
+                            visible: true 
+                        });
+                        foundSelector = selector;
+                        console.log(`Found jobs with selector after scroll: ${selector}`);
+                        break;
+                    } catch (error) {
+                        continue;
+                    }
+                }
+                
+                if (!foundSelector) {
+                    throw new Error('Could not find any job listings after trying all selectors');
+                }
+            }
+
+            // Wait for initial render and any dynamic content
+            await randomDelay(5000, 7000);
+
+            let hasMorePages = true;
+            let currentPage = 1;
+
+            while (hasMorePages) {
+                // Check browser connection at the start of each page
+                if (!this.browser.isConnected()) {
+                    console.log('\nBrowser connection lost. Exiting...');
+                    process.exit(1);
                 }
 
-                await randomDelay(2000, 3000);
+                console.log(`\n=== Processing Page ${currentPage} ===`);
+                const pageJobs: JobListing[] = [];
 
-                // Wait for job details to load with debugging
-                const detailSelectors = [
-                    '.jobs-unified-top-card__job-title',
-                    '.job-details-jobs-unified-top-card__job-title',
-                    '[data-job-title]',
-                    '.jobs-unified-top-card__content',
-                    '.jobs-search__job-details'
-                ];
+                // Add instruction banner for current page
+                await this.page.evaluate((pageNum) => {
+                    // Remove any existing banner
+                    const existingBanner = document.querySelector('div[data-banner="scraper-instructions"]');
+                    if (existingBanner) existingBanner.remove();
 
-                let detailsLoaded = false;
-                for (const selector of detailSelectors) {
+                    const div = document.createElement('div');
+                    div.setAttribute('data-banner', 'scraper-instructions');
+                    div.style.position = 'fixed';
+                    div.style.top = '0';
+                    div.style.left = '0';
+                    div.style.right = '0';
+                    div.style.backgroundColor = '#4CAF50';
+                    div.style.color = 'white';
+                    div.style.padding = '10px';
+                    div.style.zIndex = '9999';
+                    div.style.textAlign = 'center';
+                    div.style.fontSize = '14px';
+                    div.style.fontFamily = 'Arial, sans-serif';
+                    div.innerHTML = `
+                        <div style="margin-bottom: 5px">Currently on Page ${pageNum}</div>
+                        <div>1. Scroll down to load all jobs on this page</div>
+                        <div>2. Press Enter in the PowerShell/Terminal window when all jobs are visible</div>
+                        <div>3. The script will click through each job to get descriptions</div>
+                    `;
+                    document.body.appendChild(div);
+                }, currentPage);
+
+                // Wait for user input in the terminal
+                console.log('\n=== WAITING FOR USER INPUT ===');
+                console.log(`Currently processing page ${currentPage}`);
+                console.log('1. Scroll down to load all jobs on the current page');
+                console.log('2. Press Enter HERE in this PowerShell/Terminal window when ready');
+                console.log('===============================\n');
+                
+                process.stdout.write('Press Enter when all jobs are visible...');
+                await new Promise(resolve => process.stdin.once('data', resolve));
+                console.log('\nStarting job extraction for this page...');
+
+                // Get all job cards on the current page
+                const jobCards = await this.page.$$(foundSelector);
+                console.log(`\nFound ${jobCards.length} jobs on page ${currentPage}`);
+
+                // Add progress bar
+                console.log('\nProcessing jobs:');
+                console.log('=====================================');
+
+                // Process each job card
+                for (let i = 0; i < jobCards.length; i++) {
+                    // Check browser connection before processing each job
+                    if (!this.browser.isConnected()) {
+                        console.log('\nBrowser connection lost. Exiting...');
+                        process.exit(1);
+                    }
+
                     try {
-                        console.log(`Trying to find job details with selector: ${selector}`);
-                        const element = await this.page.waitForSelector(selector, { timeout: 5000 });
-                        if (element) {
-                            const text = await element.evaluate(el => el.textContent);
-                            console.log(`Found element with text: ${text}`);
-                            detailsLoaded = true;
-                            break;
+                        // Show progress
+                        const progress = Math.round((i / jobCards.length) * 100);
+                        process.stdout.write(`\rProgress: ${progress}% (${i + 1}/${jobCards.length} jobs)`);
+                        
+                        // Get the job link first
+                        const jobUrl = await this.page.evaluate((card) => {
+                            const link = card.querySelector('a.job-card-container__link');
+                            return link?.getAttribute('href') || '';
+                        }, jobCards[i]);
+
+                        if (!jobUrl) {
+                            console.log(`\nWarning: No job URL found for job ${i + 1}`);
+                            continue;
                         }
+
+                        try {
+                            // Get basic info before clicking
+                            const basicInfo = await this.page.evaluate((selectors, card) => {
+                                const getTextContent = (selector: string): string => {
+                                    const elements = card.querySelectorAll(selector);
+                                    for (const element of elements) {
+                                        const text = element.textContent?.trim() || '';
+                                        if (text) return text;
+                                    }
+                                    return '';
+                                };
+
+                                // Clean text by removing extra whitespace and verification text
+                                const cleanText = (text: string): string => {
+                                    return text
+                                        .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+                                        .replace(/\s*with verification$/, '')  // Remove "with verification"
+                                        .replace(/(.+?)\s+\1/, '$1')  // Remove duplicated text
+                                        .trim();
+                                };
+
+                                let jobTitle = '';
+                                for (const selector of selectors.JOB_TITLE) {
+                                    const text = getTextContent(selector);
+                                    if (text) {
+                                        jobTitle = cleanText(text);
+                                        break;
+                                    }
+                                }
+
+                                let companyName = '';
+                                for (const selector of selectors.COMPANY_NAME) {
+                                    const text = getTextContent(selector);
+                                    if (text) {
+                                        companyName = cleanText(text);
+                                        break;
+                                    }
+                                }
+
+                                let location = '';
+                                for (const selector of selectors.LOCATION) {
+                                    const text = getTextContent(selector);
+                                    if (text) {
+                                        location = cleanText(text);
+                                        break;
+                                    }
+                                }
+
+                                let postedDate = '';
+                                for (const selector of selectors.POSTED_DATE) {
+                                    const text = getTextContent(selector);
+                                    if (text) {
+                                        postedDate = text;
+                                        break;
+                                    }
+                                }
+
+                                let salary = '';
+                                for (const selector of selectors.SALARY) {
+                                    const text = getTextContent(selector);
+                                    if (text) {
+                                        // Try different salary patterns
+                                        const patterns = [
+                                            // Range with K format: 166K-195K or $166K-$195K
+                                            /\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K?\s*(?:-|to|–)\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K\b/i,
+                                            // Range with full numbers: $166,000-$195,000
+                                            /\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:-|to|–)\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\b/i,
+                                            // Single value with K: 150K
+                                            /\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K\b/i,
+                                            // Single full number: $150,000
+                                            /\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\b/i
+                                        ];
+
+                                        for (const pattern of patterns) {
+                                            const match = text.match(pattern);
+                                            if (match) {
+                                                const [_, first, second] = match;
+                                                if (second) {
+                                                    // Handle range format
+                                                    let min = first.replace(/,/g, '');
+                                                    let max = second.replace(/,/g, '');
+                                                    
+                                                    // Convert K to full numbers
+                                                    if (text.toLowerCase().includes('k')) {
+                                                        min = (parseFloat(min) * 1000).toString();
+                                                        max = (parseFloat(max) * 1000).toString();
+                                                    }
+                                                    
+                                                    salary = `$${parseInt(min).toLocaleString()} - $${parseInt(max).toLocaleString()}`;
+                                                    break;
+                                                } else {
+                                                    // Handle single value format
+                                                    let amount = first.replace(/,/g, '');
+                                                    
+                                                    // Convert K to full number
+                                                    if (text.toLowerCase().includes('k')) {
+                                                        amount = (parseFloat(amount) * 1000).toString();
+                                                    }
+                                                    
+                                                    salary = `$${parseInt(amount).toLocaleString()}`;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if (salary) break;
+                                    }
+                                }
+
+                                // If no salary found in dedicated fields, try to find it in the description
+                                if (!salary) {
+                                    const descriptionText = card.textContent || '';
+                                    const salaryPatterns = [
+                                        // Salary range with K format
+                                        /(?:salary range|compensation|pay range|range|pay):\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K?\s*(?:-|to|–)\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K\b/i,
+                                        // Single salary with K format
+                                        /(?:salary|compensation|pay):\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K\b/i,
+                                        // Full number range format
+                                        /(?:salary range|compensation|pay range|range|pay):\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:-|to|–)\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\b/i,
+                                        // Target annual salary format
+                                        /target annual salary.*?\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K?\s*(?:-|to|–)\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K?\b/i,
+                                        // Base salary format
+                                        /base salary.*?\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K?\s*(?:-|to|–)\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K?\b/i,
+                                        // Salary range in USD format
+                                        /\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K?\s*(?:-|to|–)\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*K?\s*USD/i
+                                    ];
+
+                                    for (const pattern of salaryPatterns) {
+                                        const match = descriptionText.match(pattern);
+                                        if (match) {
+                                            const [_, first, second] = match;
+                                            if (second) {
+                                                // Handle range format
+                                                let min = first.replace(/,/g, '');
+                                                let max = second.replace(/,/g, '');
+                                                
+                                                // Convert K to full numbers
+                                                if (descriptionText.toLowerCase().includes('k')) {
+                                                    min = (parseFloat(min) * 1000).toString();
+                                                    max = (parseFloat(max) * 1000).toString();
+                                                }
+                                                
+                                                salary = `$${parseInt(min).toLocaleString()} - $${parseInt(max).toLocaleString()}`;
+                                                break;
+                                            } else {
+                                                // Handle single value format
+                                                let amount = first.replace(/,/g, '');
+                                                
+                                                // Convert K to full number
+                                                if (descriptionText.toLowerCase().includes('k')) {
+                                                    amount = (parseFloat(amount) * 1000).toString();
+                                                }
+                                                
+                                                salary = `$${parseInt(amount).toLocaleString()}`;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                return {
+                                    jobTitle,
+                                    companyName,
+                                    location,
+                                    postedDate: postedDate || 'Not specified',
+                                    salary: salary || undefined
+                                };
+                            }, SELECTORS, jobCards[i]);
+
+                            // Click the job card to load description in the right panel
+                            await jobCards[i].click();
+                            await randomDelay(2000, 3000);
+
+                            // Try to get description from the right panel
+                            const description = await this.page.evaluate((selectors) => {
+                                // Clean text function
+                                const cleanText = (text: string): string => {
+                                    return text
+                                        .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+                                        .replace(/[\r\n]+/g, '\n')  // Replace multiple newlines with single newline
+                                        .replace(/[^\S\r\n]+/g, ' ')  // Replace multiple spaces (but not newlines) with single space
+                                        .split('\n')  // Split into lines
+                                        .map(line => line.trim())  // Trim each line
+                                        .filter(line => line)  // Remove empty lines
+                                        .join('\n')  // Join back with newlines
+                                        .trim();  // Final trim
+                                };
+
+                                // Try multiple description selectors
+                                for (const selector of selectors.DESCRIPTION) {
+                                    const element = document.querySelector(selector);
+                                    if (element) {
+                                        // Get raw text content preserving structure
+                                        const rawText = Array.from(element.querySelectorAll('*'))
+                                            .map(el => {
+                                                // Add newlines for certain elements
+                                                if (el.tagName === 'BR' || 
+                                                    el.tagName === 'P' || 
+                                                    el.tagName === 'DIV' || 
+                                                    el.tagName === 'LI') {
+                                                    return '\n' + el.textContent;
+                                                }
+                                                return el.textContent;
+                                            })
+                                            .filter(text => text)
+                                            .join(' ');
+
+                                            // Clean the text first
+                                            const cleanedText = cleanText(rawText);
+                                            
+                                            // Try to find the start of the role description
+                                            let roleDescription = cleanedText;
+                                            for (const header of selectors.DESCRIPTION_SECTIONS.START_HEADERS) {
+                                                const startIndex = cleanedText.indexOf(header);
+                                                if (startIndex !== -1) {
+                                                    roleDescription = cleanedText.substring(startIndex);
+                                                    break;
+                                                }
+                                            }
+
+                                            // Try to find where to end the description
+                                            for (const endHeader of selectors.DESCRIPTION_SECTIONS.END_HEADERS) {
+                                                const endIndex = roleDescription.indexOf(endHeader);
+                                                if (endIndex !== -1) {
+                                                    roleDescription = roleDescription.substring(0, endIndex).trim();
+                                                }
+                                            }
+
+                                            // If we couldn't find clear sections, take first 1000 characters
+                                            if (roleDescription === cleanedText) {
+                                                roleDescription = cleanedText.substring(0, 1000) + '...';
+                                            }
+
+                                            // Final cleanup
+                                            roleDescription = roleDescription
+                                                .split('\n')
+                                                .filter(line => line.trim().length > 0)  // Remove empty lines
+                                                .map(line => line.trim())  // Trim each line
+                                                .join('\n');
+
+                                            if (roleDescription) return roleDescription;
+                                    }
+                                }
+
+                                // If no description found, try getting any text content from the right panel
+                                const panel = document.querySelector('.jobs-search__right-rail');
+                                if (panel) {
+                                    const text = panel.textContent?.trim();
+                                    if (text) return cleanText(text).substring(0, 1000) + '...';
+                                }
+
+                                return '';
+                            }, SELECTORS);
+
+                            if (basicInfo.jobTitle && (description || basicInfo.companyName)) {
+                                // Store the complete job info
+                                const jobInfo: JobListing = {
+                                    ...basicInfo,
+                                    description: description || 'No description available',
+                                    url: new URL(jobUrl, 'https://www.linkedin.com').href
+                                };
+
+                                // Clean up any remaining issues in the job info
+                                Object.keys(jobInfo).forEach(key => {
+                                    if (typeof jobInfo[key] === 'string') {
+                                        jobInfo[key] = jobInfo[key]
+                                            .replace(/[\u200B-\u200D\uFEFF]/g, '')  // Remove zero-width spaces
+                                            .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+                                            .trim();
+                                    }
+                                });
+
+                                pageJobs.push(jobInfo);
+                                allJobs.push(jobInfo);
+
+                                // Log success
+                                console.log(`\nExtracted job ${i + 1}/${jobCards.length}: ${jobInfo.jobTitle}`);
+                                console.log(`Company: ${jobInfo.companyName}`);
+                                console.log(`Location: ${jobInfo.location}`);
+                                if (jobInfo.salary) console.log(`Salary: ${jobInfo.salary}`);
+
+                                // Save progress after each successful job
+                                const progressFileName = `linkedin_jobs_progress_page${currentPage}.csv`;
+                                const progressWriter = createObjectCsvWriter({
+                                    path: progressFileName,
+                                    header: [
+                                        { id: 'jobTitle', title: 'Job Title' },
+                                        { id: 'companyName', title: 'Company Name' },
+                                        { id: 'location', title: 'Location' },
+                                        { id: 'salary', title: 'Salary' },
+                                        { id: 'url', title: 'URL' },
+                                        { id: 'description', title: 'Description' },
+                                        { id: 'postedDate', title: 'Posted Date' }
+                                    ]
+                                });
+                                await progressWriter.writeRecords(pageJobs);
+                            } else {
+                                console.log(`\nWarning: Incomplete job details for job ${i + 1}`);
+                            }
+
+                        } catch (error) {
+                            console.log(`\nError processing job ${i + 1}:`, error);
+                            // Continue with next job
+                            continue;
+                        }
+
+                        // Add a delay before next job
+                        await randomDelay(2000, 3000);
                     } catch (error) {
-                        console.log(`Could not find job details with selector: ${selector}`);
+                        console.log(`\nError processing job ${i + 1}:`, error);
+                        // Continue with next job instead of failing completely
+                        continue;
                     }
                 }
 
-                if (!detailsLoaded) {
-                    // Take a screenshot of the current state
-                    await this.page.screenshot({ path: `debug-job-${i + 1}.png` });
-                    console.log(`Saved debug screenshot to debug-job-${i + 1}.png`);
-                    console.log('Could not load job details, skipping this job');
-                    continue;
-                }
+                // Complete the progress bar
+                console.log('\n=====================================');
+                console.log(`Completed processing ${pageJobs.length} jobs on page ${currentPage}`);
 
-                const jobListing = await this.extractJobDetails();
-                if (jobListing) {
-                    console.log(`Successfully extracted details for: ${jobListing.jobTitle} at ${jobListing.companyName}`);
-                    jobs.push(jobListing);
+                // Save this page's results to a CSV
+                const pageFileName = `linkedin_jobs_page${currentPage}_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+                const csvWriter = createObjectCsvWriter({
+                    path: pageFileName,
+                    header: [
+                        { id: 'jobTitle', title: 'Job Title' },
+                        { id: 'companyName', title: 'Company Name' },
+                        { id: 'location', title: 'Location' },
+                        { id: 'salary', title: 'Salary' },
+                        { id: 'url', title: 'URL' },
+                        { id: 'description', title: 'Description' },
+                        { id: 'postedDate', title: 'Posted Date' }
+                    ]
+                });
+
+                await csvWriter.writeRecords(pageJobs);
+                console.log(`\nSaved ${pageJobs.length} jobs from page ${currentPage} to: ${pageFileName}`);
+
+                // Check for next page button
+                const hasNextPage = await this.page.evaluate(() => {
+                    const nextButton = document.querySelector('button[aria-label="Next"]');
+                    return nextButton && !nextButton.hasAttribute('disabled');
+                });
+
+                if (hasNextPage) {
+                    console.log('\n=== NEXT PAGE AVAILABLE ===');
+                    console.log('Would you like to proceed to the next page?');
+                    process.stdout.write('Press Enter to continue to next page, or type "n" and Enter to stop here: ');
+                    
+                    const response = await new Promise<string>(resolve => {
+                        process.stdin.once('data', data => resolve(data.toString().trim().toLowerCase()));
+                    });
+
+                    if (response === 'n') {
+                        console.log('\nStopping at user request.');
+                        hasMorePages = false;
+                    } else {
+                        // Click next page button
+                        await this.page.click('button[aria-label="Next"]');
+                        console.log('\nNavigating to next page...');
+                        await randomDelay(3000, 5000);
+                        currentPage++;
+                    }
+                } else {
+                    console.log('\nNo more pages available.');
+                    hasMorePages = false;
+                }
+            }
+
+            // Remove the instruction banner
+            await this.page.evaluate(() => {
+                const banner = document.querySelector('div[data-banner="scraper-instructions"]');
+                if (banner) banner.remove();
+            });
+
+            // Save all jobs to a final CSV
+            const finalFileName = `linkedin_jobs_all_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+            const finalCsvWriter = createObjectCsvWriter({
+                path: finalFileName,
+                header: [
+                    { id: 'jobTitle', title: 'Job Title' },
+                    { id: 'companyName', title: 'Company Name' },
+                    { id: 'location', title: 'Location' },
+                    { id: 'salary', title: 'Salary' },
+                    { id: 'url', title: 'URL' },
+                    { id: 'description', title: 'Description' },
+                    { id: 'postedDate', title: 'Posted Date' }
+                ]
+            });
+
+            await finalCsvWriter.writeRecords(allJobs);
+            console.log(`\nCompleted processing ${allJobs.length} total job listings`);
+            console.log(`Saved all jobs to: ${finalFileName}`);
+
+            return allJobs;
+
+        } catch (error) {
+            console.log('\nAn error occurred during job search:', error);
+            await this.close();
+            process.exit(1);
+        }
+    }
+
+    private async waitForJobDetails(): Promise<boolean> {
+        const detailSelectors = [
+            '.jobs-unified-top-card__job-title',
+            '.job-details-jobs-unified-top-card__job-title',
+            '.jobs-unified-top-card__content',
+            '.jobs-search__job-details',
+            '[data-job-title]'
+        ];
+
+        for (const selector of detailSelectors) {
+            try {
+                console.log(`Trying to find job details with selector: ${selector}`);
+                const element = await this.page?.waitForSelector(selector, { timeout: 5000 });
+                if (element) {
+                    const text = await element.evaluate(el => el.textContent);
+                    console.log(`Found element with text: ${text}`);
+                    return true;
                 }
             } catch (error) {
-                console.error('Error extracting job details:', error);
-                continue;
+                console.log(`Could not find job details with selector: ${selector}`);
             }
         }
 
-        console.log(`\nCompleted processing ${jobs.length} job listings`);
-        return jobs;
+        return false;
     }
 
     private async extractJobDetails(): Promise<JobListing | null> {
@@ -307,105 +1010,130 @@ export class LinkedInScraper {
 
         try {
             // Wait for the job details pane to load
-            await this.page.waitForSelector('.jobs-search__job-details', { timeout: 5000 });
+            await this.page.waitForSelector('.jobs-unified-top-card', { timeout: 5000 });
 
-            // Try different selectors for job title
-            const titleSelectors = [
-                '.jobs-unified-top-card__job-title',
-                '.job-details-jobs-unified-top-card__job-title',
-                '[data-job-title]',
-                '.jobs-unified-top-card h1',
-                '.job-details-jobs-unified-top-card h1'
-            ];
+            // Extract all job details in a single evaluate call to avoid context switching
+            const jobInfo = await this.page.evaluate(() => {
+                const getTextContent = (selector: string): string => {
+                    const element = document.querySelector(selector);
+                    return element ? element.textContent?.trim() || '' : '';
+                };
 
-            let jobTitle = '';
-            for (const selector of titleSelectors) {
-                try {
-                    const element = await this.page.$(selector);
-                    if (element) {
-                        jobTitle = await element.evaluate(el => el.textContent?.trim() || '');
-                        if (jobTitle) break;
-                    }
-                } catch (error) {
-                    console.log(`Could not find job title with selector: ${selector}`);
+                // Get job title
+                const titleSelectors = [
+                    '.jobs-unified-top-card__job-title',
+                    '.job-details-jobs-unified-top-card__job-title',
+                    '[data-job-title]',
+                    '.jobs-unified-top-card h1',
+                    '.job-details-jobs-unified-top-card h1',
+                    '.jobs-search-results-list__title'
+                ];
+                let jobTitle = '';
+                for (const selector of titleSelectors) {
+                    jobTitle = getTextContent(selector);
+                    if (jobTitle) break;
                 }
-            }
 
-            // Try different selectors for company name
-            const companySelectors = [
-                '.jobs-unified-top-card__company-name',
-                '.job-details-jobs-unified-top-card__company-name',
-                '.jobs-company__name',
-                '[data-test-job-card-company-name]'
-            ];
-
-            let companyName = '';
-            for (const selector of companySelectors) {
-                try {
-                    const element = await this.page.$(selector);
-                    if (element) {
-                        companyName = await element.evaluate(el => el.textContent?.trim() || '');
-                        if (companyName) break;
-                    }
-                } catch (error) {
-                    console.log(`Could not find company name with selector: ${selector}`);
+                // Get company name
+                const companySelectors = [
+                    '.jobs-unified-top-card__company-name',
+                    '.job-details-jobs-unified-top-card__company-name',
+                    '.jobs-company__name',
+                    '[data-test-job-card-company-name]',
+                    '.jobs-search-results-list__subtitle'
+                ];
+                let companyName = '';
+                for (const selector of companySelectors) {
+                    companyName = getTextContent(selector);
+                    if (companyName) break;
                 }
-            }
 
-            // Try different selectors for location
-            const locationSelectors = [
-                '.jobs-unified-top-card__bullet',
-                '.job-details-jobs-unified-top-card__bullet',
-                '.jobs-unified-top-card__workplace-type',
-                '[data-test-job-card-location]'
-            ];
-
-            let location = '';
-            for (const selector of locationSelectors) {
-                try {
-                    const element = await this.page.$(selector);
-                    if (element) {
-                        location = await element.evaluate(el => el.textContent?.trim() || '');
-                        if (location) break;
-                    }
-                } catch (error) {
-                    console.log(`Could not find location with selector: ${selector}`);
+                // Get location
+                const locationSelectors = [
+                    '.jobs-unified-top-card__bullet',
+                    '.job-details-jobs-unified-top-card__bullet',
+                    '.jobs-unified-top-card__workplace-type',
+                    '[data-test-job-card-location]',
+                    '.jobs-search-results-list__location'
+                ];
+                let location = '';
+                for (const selector of locationSelectors) {
+                    location = getTextContent(selector);
+                    if (location) break;
                 }
-            }
 
-            // Try different selectors for description
-            const descriptionSelectors = [
-                '.jobs-description-content__text',
-                '.jobs-box__html-content',
-                '.jobs-description__content',
-                '[data-test-job-description]'
-            ];
-
-            let description = '';
-            for (const selector of descriptionSelectors) {
-                try {
-                    const element = await this.page.$(selector);
+                // Get description
+                const descriptionSelectors = [
+                    '.jobs-description-content__text',
+                    '.jobs-box__html-content',
+                    '.jobs-description',
+                    '[data-test-job-description]',
+                    '.jobs-search-results-list__description',
+                    '.jobs-description',
+                    '.job-view-layout',
+                    '.jobs-description__container',
+                    '.jobs-unified-description__content'
+                ];
+                let description = '';
+                for (const selector of descriptionSelectors) {
+                    const element = document.querySelector(selector);
                     if (element) {
-                        description = await element.evaluate(el => el.textContent?.trim() || '');
+                        // Get all text content, including from nested elements
+                        description = Array.from(element.querySelectorAll('*'))
+                            .map(el => el.textContent?.trim())
+                            .filter(text => text)
+                            .join('\n');
                         if (description) break;
                     }
-                } catch (error) {
-                    console.log(`Could not find description with selector: ${selector}`);
                 }
-            }
 
-            const jobListing: JobListing = {
-                companyName: companyName || 'Unknown Company',
-                jobTitle: jobTitle || 'Unknown Title',
-                location: location || 'Unknown Location',
-                url: await this.page.url(),
-                description: description || 'No description available',
-                postedDate: await this.getText('.jobs-unified-top-card__posted-date') || 'Unknown',
-                industry: await this.getText('.jobs-company__industry') || 'Unknown',
-                companySize: await this.getText('.jobs-company-size') || 'Unknown'
-            };
+                // Get posted date
+                const dateSelectors = [
+                    '.jobs-unified-top-card__posted-date',
+                    '.jobs-details-job-card__time-badge',
+                    '.job-card-container__listed-time',
+                    'time.artdeco-entity-lockup__caption',
+                    '.job-card-container__metadata-wrapper time',
+                    '[data-test-job-card-posted-date]',
+                    '.posted-time-ago__text',
+                    '.job-search-card__listdate',
+                    '.jobs-search-results-list__posted-date'
+                ];
+                let postedDate = '';
+                for (const selector of dateSelectors) {
+                    postedDate = getTextContent(selector);
+                    if (postedDate) break;
+                }
 
-            return jobListing;
+                // Get salary if available
+                const salarySelectors = [
+                    '.jobs-unified-top-card__salary',
+                    '.jobs-unified-top-card__metadata-salary',
+                    '.compensation-information',
+                    '.jobs-unified-top-card__metadata-compensation',
+                    '[data-test-job-card-salary]',
+                    '.job-card-container__salary-info',
+                    '.salary-information',
+                    '.jobs-search-results-list__salary'
+                ];
+                let salary = '';
+                for (const selector of salarySelectors) {
+                    salary = getTextContent(selector);
+                    if (salary) break;
+                }
+
+                return {
+                    jobTitle,
+                    companyName,
+                    location,
+                    description,
+                    postedDate,
+                    url: window.location.href,
+                    salary: salary || undefined
+                };
+            });
+
+            return jobInfo;
         } catch (error) {
             console.error('Error extracting job details:', error);
             return null;
@@ -416,14 +1144,10 @@ export class LinkedInScraper {
         if (!this.page) return '';
 
         try {
-            const element = await this.page.$(selector);
-            if (!element) {
-                console.log(`Element not found for selector: ${selector}`);
-                return '';
-            }
-
-            const text = await this.page.evaluate((el: Element) => el.textContent, element);
-            return cleanText(text || '');
+            return await this.page.evaluate((sel) => {
+                const element = document.querySelector(sel);
+                return element ? element.textContent?.trim() || '' : '';
+            }, selector);
         } catch (error) {
             console.log(`Error getting text for selector ${selector}:`, error);
             return '';
@@ -435,48 +1159,74 @@ export class LinkedInScraper {
 
         console.log('Starting auto-scroll process...');
         
+        // Keep track of the total jobs found
+        let previousJobCount = 0;
+        let sameCountIterations = 0;
+        const maxSameCountIterations = 10; // Increased from 5 to 10 to try to load more jobs
+        
         // Scroll in smaller chunks with random delays
-        let lastHeight = 0;
-        let sameHeightCount = 0;
-        const maxSameHeight = 3; // Stop if height doesn't change after 3 attempts
-
-        while (sameHeightCount < maxSameHeight) {
-            const currentHeight = await this.page.evaluate(() => document.documentElement.scrollHeight);
+        while (sameCountIterations < maxSameCountIterations) {
+            // Get current job count
+            const currentJobCount = await this.page.evaluate(() => {
+                const cards = document.querySelectorAll('.job-card-container');
+                return cards.length;
+            });
             
-            if (currentHeight === lastHeight) {
-                sameHeightCount++;
+            console.log(`Current job count: ${currentJobCount}`);
+            
+            if (currentJobCount === previousJobCount) {
+                sameCountIterations++;
+                console.log(`No new jobs found (attempt ${sameCountIterations}/${maxSameCountIterations})`);
             } else {
-                sameHeightCount = 0;
+                sameCountIterations = 0;
+                console.log(`Found ${currentJobCount - previousJobCount} new jobs`);
             }
-
-            lastHeight = currentHeight;
-
-            // Scroll a random amount (between 100 and 500 pixels)
-            const scrollAmount = Math.floor(Math.random() * 400) + 100;
             
+            previousJobCount = currentJobCount;
+
             try {
+                // Scroll a larger amount (between 500 and 1000 pixels)
+                const scrollAmount = Math.floor(Math.random() * 500) + 500;
+                
+                // Scroll and wait for network idle
                 await this.page.evaluate((scrollAmount) => {
                     window.scrollBy(0, scrollAmount);
                 }, scrollAmount);
 
-                // Add a random delay between scrolls (500ms to 1.5s)
-                await randomDelay(500, 1500);
+                // Wait for potential new content to load
+                await this.page.waitForNetworkIdle({ timeout: 5000 }).catch(() => {
+                    // Ignore timeout errors, just continue
+                });
 
-                // Occasionally pause for longer (simulating human behavior)
-                if (Math.random() < 0.2) { // 20% chance
-                    console.log('Taking a brief pause in scrolling...');
-                    await randomDelay(1000, 2000);
+                // Add a random delay between scrolls (2s to 4s)
+                await randomDelay(2000, 4000);
+
+                // Click "Show more jobs" button if present
+                const showMoreButton = await this.page.$('button.infinite-scroller__show-more-button, button.artdeco-button--muted');
+                if (showMoreButton) {
+                    console.log('Clicking "Show more jobs" button...');
+                    await showMoreButton.click();
+                    await randomDelay(3000, 5000);
                 }
+
+                // Try to click "See more jobs" button if present
+                const seeMoreButtons = await this.page.$$('button.see-more-jobs, button.jobs-search-results__see-more-jobs');
+                for (const button of seeMoreButtons) {
+                    console.log('Clicking "See more jobs" button...');
+                    await button.click();
+                    await randomDelay(3000, 5000);
+                }
+
             } catch (error: any) {
                 console.log('Error during scrolling, but continuing:', error.message || 'Unknown error');
-                await randomDelay(1000, 2000);
+                await randomDelay(3000, 5000);
             }
         }
 
-        console.log('Auto-scroll completed');
+        console.log(`Auto-scroll completed. Found ${previousJobCount} total jobs`);
         
         // Wait a moment after scrolling
-        await randomDelay(2000, 3000);
+        await randomDelay(3000, 5000);
     }
 
     async saveToCSV(jobs: JobListing[]): Promise<void> {
@@ -484,14 +1234,13 @@ export class LinkedInScraper {
         const csvWriter = createObjectCsvWriter({
             path: this.config.outputPath,
             header: [
-                { id: 'companyName', title: 'Company Name' },
                 { id: 'jobTitle', title: 'Job Title' },
+                { id: 'companyName', title: 'Company Name' },
                 { id: 'location', title: 'Location' },
+                { id: 'salary', title: 'Salary' },
                 { id: 'url', title: 'URL' },
                 { id: 'description', title: 'Description' },
-                { id: 'postedDate', title: 'Posted Date' },
-                { id: 'industry', title: 'Industry' },
-                { id: 'companySize', title: 'Company Size' }
+                { id: 'postedDate', title: 'Posted Date' }
             ]
         });
 
@@ -501,11 +1250,26 @@ export class LinkedInScraper {
 
     async close(): Promise<void> {
         if (this.browser) {
-            console.log('Closing browser...');
-            await this.browser.close();
+            console.log('\nClosing browser...');
+            try {
+                await this.browser.close();
+            } catch (error) {
+                console.log('Error while closing browser:', error);
+            }
             this.browser = null;
             this.page = null;
             console.log('Browser closed');
+        }
+    }
+
+    // Add a new method to check browser health
+    private async checkBrowserHealth(): Promise<boolean> {
+        if (!this.browser || !this.page) return false;
+        
+        try {
+            return this.browser.isConnected() && !this.page.isClosed();
+        } catch {
+            return false;
         }
     }
 } 

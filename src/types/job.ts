@@ -1,12 +1,12 @@
 export interface JobListing {
-    companyName: string;
     jobTitle: string;
+    companyName: string;
     location: string;
-    url: string;
     description: string;
-    postedDate?: string;  // Optional
-    industry?: string;    // Optional
-    companySize?: string; // Optional
+    url: string;
+    postedDate: string;
+    salary?: string;
+    [key: string]: string | undefined;  // Allow string indexing with optional undefined values
 }
 
 export interface ScraperConfig {
